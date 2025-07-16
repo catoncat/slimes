@@ -1,0 +1,1300 @@
+Directory structure:
+└── slimes/
+    ├── CLAUDE.md
+    ├── game-design.md
+    ├── index.html
+    ├── package.json
+    ├── sumarize.md
+    ├── tsconfig.json
+    ├── vite.config.ts
+    └── src/
+        ├── main.ts
+        ├── core/
+        │   ├── GameConfig.ts
+        │   └── TurnManager.ts
+        ├── entities/
+        │   └── Unit.ts
+        ├── scenes/
+        │   └── GameScene.ts
+        └── systems/
+            └── MapSystem.ts
+
+================================================
+FILE: CLAUDE.md
+================================================
+
+- 总是把对话和需求还有任务执行情况记录到项目根目录的 markdown 文档里（summarize.md）
+- 优先划分任务，每次只完成一个任务
+
+
+
+================================================
+FILE: game-design.md
+================================================
+### **《史莱姆的野望》核心游戏机制提取文档**
+
+#### **1. 游戏核心循环 (Core Gameplay Loop)**
+
+这是一款**回合制战棋 (Turn-Based Tactics)** 游戏。其核心循环如下：
+
+1.  **战前准备 (Pre-Battle Phase):**
+    *   玩家从自己拥有的史莱姆中选择一定数量（根据关卡限制）的单位出战。
+    *   可以查看关卡内的敌人配置、地形等信息来制定策略。
+    *   可以通过“携行”类史莱姆（如Hermes）携带上一场战斗中夺取的敌方单位直接参战。
+
+2.  **战斗阶段 (Battle Phase):**
+    *   游戏在棋盘式地图上进行，敌我双方轮流行动。
+    *   玩家回合：玩家可以操作自己所有的单位（史莱姆和已被夺取的人类）进行行动，每个单位一次机会。行动选项包括：
+        *   **移动 (Move):** 在蓝色高亮区域内移动。
+        *   **攻击 (Attack):** 对敌人造成伤害。
+        *   **夺取 (Claim):** 史莱姆的核心能力，钻入敌人身体并控制他们，是游戏最独特的机制。
+        *   **特殊能力 (Ability):** 使用史莱姆或特定人类单位的独有技能（如加速、融化、治疗等）。
+        *   **待机 (Wait):** 结束当前单位的行动。
+    *   敌人回合：敌方AI控制其所有单位进行行动。
+
+3.  **胜利/失败条件 (Win/Loss Conditions):**
+    *   **胜利条件：** 夺取或消灭所有敌方单位。
+    *   **失败条件：** 己方所有单位（包括史莱姆和被夺取的单位）被消灭。攻略中提到，某些特殊情况下（如被女王击败）也可能直接判负。
+    *   战斗失败没有惩罚，玩家可以随时重新挑战，这鼓励玩家不断尝试和优化策略。
+
+#### **2. 单位基础属性 (Unit Attributes)**
+
+每个单位（史莱姆、人类、怪物）都由以下核心属性定义：
+
+*   **HP (Health Points):** 生命值，归零则单位被消灭。
+*   **ATK (Attack):** 物理攻击力，决定物理攻击造成的伤害。
+*   **DEF (Defense):** 物理防御力，减免受到的物理伤害。
+*   **移动力 (Move/Moving Force):** 每回合可以移动的格子数。
+*   **攻击范围 (Attack Range):** 能够发动攻击的距离。分为近战（1格）和远程（2格或以上）。
+*   **元素属性 (Elemental Affinity):** 分为**水、火、草**三大基础属性，以及特殊的**太阳**属性。
+*   **特殊能力 (Special Ability):** 单位的独有技能，是策略的核心。
+*   **可夺取率 (Claimability %):** 仅限敌方单位，表示史莱姆成功夺取的概率。从100%到0%甚至x（不可夺取）不等。
+*   **等级 (Level):** 单位的强度等级，影响HP、ATK、DEF等。
+*   **种族/职业 (Type/Class):** 如剑士、弓箭手、史莱姆等。
+*   **性别 (Gender):** 影响某些特殊能力（如魅惑）。
+
+#### **3. 核心机制：夺取 (Claim/Possession)**
+
+这是游戏最核心、最独特的机制。
+
+*   **基本原理:** 史莱姆单位可以消耗自己，进入敌方人类单位体内并永久控制该单位。被夺取的单位将成为玩家的永久战力（在该场战斗中）。
+*   **夺取成功率:**
+    *   不同敌人有不同的基础“可夺取率”，如农民（100%）、骑士（20%）、忍者（1%）、铠甲兵（0%）。
+    *   **史莱姆能力修正:**
+        *   `Carrot` 史莱姆夺取抗性单位的成功率是普通史莱姆的 **5倍**（20% -> 100%）。
+        *   `Rider` 史莱姆的成功率是普通史莱姆的 **100倍**（1% -> 100%）。
+        *   `Little Slime` 的 **“Slow”** 技能可以使目标“可夺取率”**x5**，持续3回合。
+        *   `Sticky` 史莱姆的 **“Sticky”** 技能可以使目标“可夺取率”变为 **100%**（对0%单位则变为1%），持续3回合。
+    *   **技能叠加规则:** Slow和Sticky效果**互相覆盖**，不能叠加。先用Sticky再用Slow，则Sticky效果消失。
+*   **夺取后的属性加成 (Stat Boosts):**
+    *   **元素同亲 (Elemental Affinity):** 如果史莱姆与被夺取单位的元素属性相同，则该单位获得 **+25% ATK 和 +25% DEF** 的加成。
+    *   **性别同亲 (Gender Affinity):** `Peavy` 类史莱姆夺取同性别的女性单位时，除了元素加成外，还有额外加成（攻略描述为共计40%的攻防提升，意味着性别加成约为15%）。
+    *   **特殊史莱姆加成:** `Attack Slime`、`Guard Slime`、`Magic Slime` 在夺取同元素单位时，提供40%的对应属性加成（而非25%）。
+*   **夺取后的状态:**
+    *   `Irregular` 史莱姆夺取后，被夺取的单位可以**立即行动一次**。
+    *   被夺取后，原史莱姆消失。如果被夺取的单位被击败，除非是“复活系”史莱姆，否则单位彻底消失。
+    *   敌方的寄生单位（如Asmodian, Hollow Slime）也可以夺取单位，并提供强大的属性加成（30%-40%）。如果它们夺取了玩家已夺取的单位，玩家的史莱姆会被**“弹出”**并存活下来。
+
+#### **4. 战斗系统 (Combat System)**
+
+*   **元素克制 (Elemental System):**
+    *   **水 > 火 > 草 > 水** 循环克制。
+    *   **太阳** 属性克制所有其他属性。
+    *   **伤害计算:** 攻击克制属性，伤害 **+50%**。攻击被克制属性，伤害 **-50%**。
+*   **地形与高低差 (Elevation):**
+    *   **高打低:** 攻击伤害 **+10%** 或更多（取决于高度差）。
+    *   **低打高:** 攻击伤害大幅降低。
+    *   魔法攻击无视高低差限制。
+*   **攻击类型:**
+    *   **近战 (Direct):** 攻击范围1，会受到反击。
+    *   **远程 (Ranged):** 攻击范围2或以上，在自身攻击范围外攻击近战单位时，**不会受到反击**。
+    *   **魔法 (Magic):** 通常有范围效果（如十字形5格），无视高低差，不触发反击。
+*   **反击 (Counterstrike):**
+    *   近战单位被攻击后会自动反击，伤害约为正常攻击的 **50%**。
+*   **伤害浮动 (Damage Variance):**
+    *   所有伤害都有一个 **±25%** 的随机浮动区间，增加了战斗的不确定性。
+*   **恢复机制 (Recovery):**
+    *   地图上的**恢复旗帜 (Recovery Flag)** 可以让站在上面的单位每回合恢复 **20% - 40%** 的最大HP（以4%为步长随机）。
+    *   魔法和炮兵单位需要站在旗帜上才能补充有限的弹药/魔法次数。
+
+#### **5. 状态效果与特殊能力 (Status Effects & Abilities)**
+
+这是策略深度的关键。
+
+| 效果/能力 | 来源史莱姆/单位 | 效果描述 | 持续时间 |
+| :--- | :--- | :--- | :--- |
+| **Slow (减速)** | Little Slime | 目标移动力降为1，可夺取率x5。 | 3回合 |
+| **Sticky (粘滞)** | Sticky | 目标无法移动，可夺取率变为100%（0%变为1%）。 | 3回合 |
+| **Melt (融化)** | Melty, Heavy Peavy | 移除目标装备，大幅降低防御，变为100%可夺取。 | 3回合 |
+| **Super Melt (超级融化)**| Super Melty | 同上，但能对铠甲兵等抗性单位生效。 | 5回合 |
+| **Charm (魅惑)** | Melted单位 | 使异性敌人叛变，攻击其友军。 | 3回合 |
+| **Bribe (贿赂)** | Merchant | 使任意敌人叛变。 | 3回合 |
+| **Honeytrap (甜蜜陷阱)** | Girl | 使男性敌人叛变。 | 3回合 |
+| **Order (命令)** | Valoi King | 使任意敌人叛变。 | 1回合 |
+| **Invisible (隐身)** | Invisible | 自身隐形，不会成为单体攻击目标，攻击不被反击。 | 3回合 |
+| **Teleport (传送)** | Teleport, Neo | 传送任意单位（除自身）到地图任意空格。 | - |
+| **Warp (跃迁)** | Warp Slime | 传送自身到地图任意空格。 | - |
+| **ATK+/DEF+/MP+** | Attacker, Defender, Wiz | 为友方单位提供20%的攻击/防御/魔法伤害增益。 | 整场战斗 |
+| **Carryover (携带)** | Hermes, Super Hermes| 战斗结束后，若被夺取的单位存活，可带入下一场战斗。 | 1-4场战斗|
+| **Revive (复活)** | Guts, Phoenix | 被夺取的单位被击败后，史莱姆会复活，可以再次夺取。 | 1-2次或无限|
+| **Split (分裂)** | Divide, Goddess' Hand| 被攻击后分裂成2个或4个单位，HP平分。 | - |
+| **Steal (偷窃)** | Isabella | 效果同Super Melt。 | 3回合 |
+
+#### **6. 游戏进程与元游戏 (Progression & Meta-Game)**
+
+*   **史莱姆获取:** 战斗胜利后，有一定概率吸引野生史莱姆加入队伍。特定关卡首次通关会100%获得特定史莱姆。
+*   **经验与升级 (Experience & Leveling):**
+    *   参与战斗并存活的史莱姆会获得经验值。
+    *   经验值获取量受关卡难度影响（困难1.5倍，简单0.5倍）。
+    *   升级会提升基础属性（如+5 HP）。
+    *   达到特定等级（成熟期）后，史莱姆会获得**等级奖励 (Level Up Bonus)**，通常是强化其特殊能力（如增加使用次数、提升移动力等）。稀有度越高的史莱姆，成熟越晚。
+*   **关卡结构:**
+    *   游戏分为多个大区域（Baleares Kingdom, Witch Forest等）。
+    *   每个区域包含多个主线关卡。
+    *   通关一个关卡会解锁下一个。
+    *   每个关卡都有**简单 (Easy)、普通 (Normal)、困难 (Hard)** 三种难度。
+    *   通关任一难度的关卡后，会解锁该地图的**挑战关卡 (Challenge Levels)**，共5级，难度极高，是获取稀有史莱姆的主要途径。
+
+#### **7. AI 行为模式 (AI Behavior Patterns)**
+
+攻略中揭示了大量AI的行为逻辑，这对于复刻游戏至关重要。
+
+*   **目标选择优先级:**
+    1.  **金属史莱姆优先 (Metal Slime Priority):** 如果`Metal Slime`在攻击范围内，敌人几乎总会无视一切其他因素（如高低差、元素克制）优先攻击它。
+    2.  **高低差优先 (Elevation Priority):** 在没有金属史莱姆的情况下，敌人倾向于攻击能获得最大高度优势的目标（即攻击处在低处的单位）。
+    3.  **多目标优先 (Multi-Target Priority):** 拥有范围攻击的单位（炮兵、法师）会优先选择能同时击中最多单位的位置，此时可能忽略高低差。
+    4.  **避免反击优先 (Avoid Counterstrike Priority):** 远程单位会优先攻击无法反击的目标。
+    5.  **最近/最远目标 (Distance Priority):** 在其他条件相同的情况下，某些AI（如贤者）倾向于攻击更远的目标。
+*   **阵地行为 (Positional Behavior):**
+    *   占据高地（如屋顶、悬崖）的敌人通常**不会主动放弃**其位置优势。
+    *   **触发条件:** 如果玩家从其攻击范围外攻击了这些高地上的敌人，它们就会放弃阵地，主动冲下来攻击玩家。
+*   **特殊单位行为:**
+    *   **寄生单位 (Asmodians):** 会优先夺取范围内最强大的可夺取单位。在附近有可夺取目标时，通常不会主动攻击玩家的史莱姆。
+    *   **治疗单位 (Healers):** 会优先治疗HP百分比最低的友军。
+    *   **贤者 (Sages):** 绝对不会攻击被`Invalidation`史莱姆夺取的单位。
+
+---
+
+### **总结**
+
+《史莱姆的野望》的核心魅力在于其独特的**“夺取”机制**与**高策略深度**的结合。它不是一个单纯比拼数值的游戏，而是鼓励玩家利用各种史莱姆的独特能力，通过**信息差、战术欺骗和资源交换**来战胜远比自己强大的敌人。
+
+提供给AI制作游戏时，应重点强调以下几点：
+
+1.  **非对称对抗:** 玩家方（史莱姆）极其脆弱，但拥有改变游戏规则的强大能力（夺取、融化、传送等）。敌人方（人类）数值强大，但行为模式固定，容易被利用。
+2.  **策略多样性:** 必须实现攻略中提到的所有史莱姆和敌人的特殊能力，并确保它们之间的交互（如Slow vs Sticky）符合规则。这是游戏策略深度的基石。
+3.  **智能但可预测的AI:** AI需要遵循上述的行为模式（高低差、金属史莱姆优先等），这使得玩家可以通过策略“操纵”AI的行动，获得成就感。
+4.  **关卡设计的核心:** 关卡设计应围绕“夺取”展开，通过敌人配置、地形和旗帜位置，引导或限制玩家的夺取策略，创造出多样的解法。
+
+这份文档已经覆盖了制作这款游戏所需的所有核心机制和规则。祝你（和你的AI）制作顺利！
+
+
+
+================================================
+FILE: index.html
+================================================
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>史莱姆的野望</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
+
+
+================================================
+FILE: package.json
+================================================
+{
+  "name": "slimes",
+  "version": "1.0.0",
+  "description": "史莱姆的野望 - JavaScript复现版",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["game", "phaser", "typescript", "slime"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^24.0.14",
+    "phaser": "^3.90.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4"
+  }
+}
+
+
+================================================
+FILE: sumarize.md
+================================================
+# 史莱姆的野望 - JavaScript复现项目进展记录
+
+## 项目概述
+使用JavaScript/TypeScript + Phaser 3复现经典策略游戏《史莱姆的野望》(Ambition of the Slimes)
+
+## 技术栈
+- **游戏引擎**: Phaser 3.90.0
+- **开发语言**: TypeScript 5.8.3
+- **构建工具**: Vite 7.0.4
+- **运行环境**: Web浏览器
+
+## 已完成任务 ✅
+
+### 1. 项目基础架构搭建
+- ✅ 项目结构设计与创建
+- ✅ 开发环境配置 (TypeScript + Vite)
+- ✅ 基础配置文件创建 (tsconfig.json, vite.config.ts)
+- ✅ 入口文件和主游戏配置完成
+
+### 2. 核心系统实现
+- ✅ **地图系统**: 20x15网格地图，支持地形渲染和点击交互
+- ✅ **单位系统**: 史莱姆和敌人的基础数据结构
+- ✅ **回合制系统**: TurnManager实现完整的回合循环
+- ✅ **渲染系统**: 基于Phaser的游戏场景和UI渲染
+
+### 3. 基础游戏功能
+- ✅ 网格地图显示和高亮系统
+- ✅ 单位移动和攻击机制
+- ✅ 回合切换和UI显示
+- ✅ 选择和取消选择单位
+
+### 4. Bug修复
+- ✅ 修复了`getCurrentTurn`方法不存在的TypeError
+
+## 当前项目结构
+```
+src/
+├── core/
+│   ├── GameConfig.ts     # 游戏全局配置
+│   └── TurnManager.ts    # 回合管理系统
+├── entities/
+│   └── Unit.ts          # 单位基础类
+├── systems/
+│   └── MapSystem.ts     # 地图系统
+├── scenes/
+│   └── GameScene.ts     # 主游戏场景
+├── ui/                  # UI组件 (待实现)
+├── data/                # 游戏数据 (待实现)
+└── utils/               # 工具函数 (待实现)
+```
+
+## 待完成任务 📋
+
+### 核心机制完善 (优先级：高)
+- [ ] **占据系统**: 实现史莱姆占据敌人的核心机制
+- [ ] **元素克制**: 实现水→火→草→水的克制关系
+- [ ] **战斗计算**: 完善伤害计算公式，包含元素克制和高低差
+
+### 游戏内容扩展 (优先级：中)
+- [ ] **史莱姆特殊能力**: 实现各种史莱姆的独特技能
+- [ ] **状态效果系统**: 实现Melt、Sticky、Slow等状态效果
+- [ ] **敌人数据配置**: 完善敌人属性和占据率系统
+- [ ] **元素系统**: 完善元素类型和克制关系
+
+### 游戏体验优化 (优先级：低)
+- [ ] **战斗预测UI**: 显示攻击/占据的预测结果
+- [ ] **单位信息显示**: 详细的单位属性和状态展示
+- [ ] **地图多样性**: 不同地形和障碍物
+- [ ] **存档系统**: 游戏进度保存和读取
+
+## 下一步重点
+1. **占据系统**: 实现史莱姆移动到敌人旁边并尝试占据的核心玩法
+2. **元素克制**: 在伤害计算中考虑元素相克关系
+3. **特殊能力**: 开始实现一些简单的史莱姆能力，如Little Slime的Slow
+
+## 已知问题
+- 当前只有基础移动和攻击，缺少占据机制
+- 元素克制和高低差系统尚未实现
+- 缺少状态效果和特殊能力
+
+## 运行方式
+```bash
+npm run dev    # 启动开发服务器
+npm run build  # 构建生产版本
+```
+
+---
+*最后更新：2025年7月15日*
+
+
+================================================
+FILE: tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["phaser"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+
+
+================================================
+FILE: vite.config.ts
+================================================
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  root: '.',
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: 'index.html'
+      }
+    }
+  },
+  server: {
+    port: 3000,
+    open: true
+  }
+})
+
+
+================================================
+FILE: src/main.ts
+================================================
+import Phaser from 'phaser';
+import { GameScene } from './scenes/GameScene';
+
+const config: Phaser.Types.Core.GameConfig = {
+  type: Phaser.AUTO,
+  width: 800,
+  height: 600,
+  parent: 'game-container',
+  backgroundColor: '#2c3e50',
+  scene: [GameScene],
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { y: 0 },
+      debug: false
+    }
+  }
+};
+
+new Phaser.Game(config);
+
+
+================================================
+FILE: src/core/GameConfig.ts
+================================================
+export const GAME_CONFIG = {
+  GRID_SIZE: 32,
+  MAP_WIDTH: 20,
+  MAP_HEIGHT: 15,
+  COLORS: {
+    GRID: 0x34495e,
+    GRID_BORDER: 0x2c3e50,
+    SELECTED: 0x3498db,
+    HOVER: 0x2980b9,
+    MOVE_RANGE: 0x2ecc71,
+    ATTACK_RANGE: 0xe74c3c,
+    CLAIM_RANGE: 0xff00ff
+  }
+} as const;
+
+export const ELEMENTS = {
+  FIRE: 'fire',
+  WATER: 'water',
+  EARTH: 'earth',
+  WIND: 'wind',
+  LIGHT: 'light',
+  DARK: 'dark'
+} as const;
+
+export type Element = typeof ELEMENTS[keyof typeof ELEMENTS];
+
+
+================================================
+FILE: src/core/TurnManager.ts
+================================================
+export enum TurnPhase {
+  PLAYER_TURN = 'player_turn',
+  ENEMY_TURN = 'enemy_turn',
+  ANIMATION = 'animation',
+  GAME_OVER = 'game_over'
+}
+
+interface TurnAction {
+  type: 'move' | 'attack' | 'wait';
+  unitId: string;
+  targetX?: number;
+  targetY?: number;
+  targetUnitId?: string;
+}
+
+export class TurnManager {
+  private currentPhase: TurnPhase = TurnPhase.PLAYER_TURN;
+  private turnCount: number = 1;
+
+  constructor(
+    private playerUnits: Unit[],
+    private enemyUnits: Unit[]
+  ) {
+    this.startNewRound();
+  }
+
+  startNewRound(): void {
+    this.turnCount++;
+    this.currentPhase = TurnPhase.PLAYER_TURN;
+    
+    // Reset all units' action state
+    this.playerUnits.forEach(u => {
+      u.hasActed = false;
+      u.hasMovedThisTurn = false;
+    });
+    this.enemyUnits.forEach(u => {
+      u.hasActed = false;
+      u.hasMovedThisTurn = false;
+    });
+    
+    console.log(`--- Round ${this.turnCount} ---`);
+  }
+
+  endPlayerTurn(): void {
+    this.currentPhase = TurnPhase.ENEMY_TURN;
+    console.log("Enemy turn starts.");
+    // In the future, enemy AI logic will go here.
+    // For now, it ends immediately.
+    this.endEnemyTurn();
+  }
+
+  endEnemyTurn(): void {
+    this.currentPhase = TurnPhase.PLAYER_TURN;
+    console.log("Player turn starts.");
+    this.startNewRound();
+  }
+
+  getCurrentPhase(): TurnPhase {
+    return this.currentPhase;
+  }
+
+  checkGameOver(): { isOver: boolean; winner: 'player' | 'enemy' | null } {
+    const alivePlayerUnits = this.playerUnits.filter(u => !u.isDead());
+    const aliveEnemyUnits = this.enemyUnits.filter(u => !u.isDead());
+    
+    if (alivePlayerUnits.length === 0) {
+      this.currentPhase = TurnPhase.GAME_OVER;
+      return { isOver: true, winner: 'enemy' };
+    }
+    
+    if (aliveEnemyUnits.length === 0) {
+      this.currentPhase = TurnPhase.GAME_OVER;
+      return { isOver: true, winner: 'player' };
+    }
+    
+    return { isOver: false, winner: null };
+  }
+
+  getTurnOrder(): Unit[] {
+    const playerUnits = this.playerUnits.filter(u => !u.isDead());
+    const enemyUnits = this.enemyUnits.filter(u => !u.isDead());
+    
+    if (this.isPlayerTurn()) {
+      return playerUnits;
+    } else {
+      return enemyUnits;
+    }
+  }
+
+  getRemainingUnits(): { player: Unit[]; enemy: Unit[] } {
+    return {
+      player: this.playerUnits.filter(u => !u.isDead()),
+      enemy: this.enemyUnits.filter(u => !u.isDead())
+    };
+  }
+}
+
+export interface Unit {
+  id: string;
+  x: number;
+  y: number;
+  isPlayer: boolean;
+  isDead(): boolean;
+  canMoveTo(x: number, y: number): boolean;
+  canAttack(target: Unit): boolean;
+}
+
+
+================================================
+FILE: src/entities/Unit.ts
+================================================
+import { Element } from '../core/GameConfig';
+
+export interface UnitStats {
+  hp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  moveRange: number;
+  attackRange: number;
+  element: Element;
+}
+
+export interface ClaimRate {
+  base: number; // 基础占据率 (0-100)
+  modified: number; // 实际占据率 (考虑状态效果)
+}
+
+export class Unit {
+  public stats: UnitStats;
+  public x: number;
+  public y: number;
+  public isSelected: boolean = false;
+  public isPlayer: boolean;
+  public hasActed: boolean = false;
+  public hasMovedThisTurn: boolean = false;
+
+  public claimRate: ClaimRate;
+  public statusEffects: Set<string> = new Set();
+
+  constructor(
+    public id: string,
+    public type: 'slime' | 'enemy',
+    stats: Partial<UnitStats>,
+    x: number,
+    y: number,
+    isPlayer: boolean = false,
+    claimRate: number = 100
+  ) {
+    this.x = x;
+    this.y = y;
+    this.isPlayer = isPlayer;
+    
+    this.stats = {
+      hp: stats.hp || 10,
+      maxHp: stats.maxHp || 10,
+      attack: stats.attack || 5,
+      defense: stats.defense || 2,
+      moveRange: stats.moveRange || 2,
+      attackRange: stats.attackRange || 1,
+      element: stats.element || 'water'
+    };
+
+    this.claimRate = {
+      base: claimRate,
+      modified: claimRate
+    };
+  }
+
+  canMoveTo(x: number, y: number): boolean {
+    const distance = Math.abs(x - this.x) + Math.abs(y - this.y);
+    return distance <= this.stats.moveRange;
+  }
+
+  canAttack(target: Unit): boolean {
+    const distance = Math.abs(target.x - this.x) + Math.abs(target.y - this.y);
+    return distance <= this.stats.attackRange && this.isPlayer !== target.isPlayer;
+  }
+
+  canClaim(target: Unit): boolean {
+    const distance = Math.abs(target.x - this.x) + Math.abs(target.y - this.y);
+    return distance <= 1 && 
+           this.type === 'slime' && 
+           this.isPlayer && 
+           !target.isPlayer && 
+           target.type === 'enemy';
+  }
+
+  getClaimSuccessRate(target: Unit): number {
+    if (!this.canClaim(target)) return 0;
+    
+    let rate = target.claimRate.modified;
+    
+    // 考虑状态效果对占据率的影响
+    if (target.statusEffects.has('melted')) {
+      rate = 100; // 融化状态下100%可占据
+    } else if (target.statusEffects.has('sticky')) {
+      rate = Math.max(rate, 1); // 粘性状态下至少1%
+    }
+    
+    return Math.min(100, Math.max(0, rate));
+  }
+
+  attemptClaim(target: Unit): boolean {
+    const successRate = this.getClaimSuccessRate(target);
+    return Math.random() * 100 < successRate;
+  }
+
+  addStatusEffect(effect: string): void {
+    this.statusEffects.add(effect);
+  }
+
+  removeStatusEffect(effect: string): void {
+    this.statusEffects.delete(effect);
+  }
+
+  hasStatusEffect(effect: string): boolean {
+    return this.statusEffects.has(effect);
+  }
+
+  takeDamage(damage: number): number {
+    const actualDamage = Math.max(1, damage - this.stats.defense);
+    this.stats.hp = Math.max(0, this.stats.hp - actualDamage);
+    return actualDamage;
+  }
+
+  isDead(): boolean {
+    return this.stats.hp <= 0;
+  }
+
+  getColor(): number {
+    const colors = {
+      fire: 0xe74c3c,
+      water: 0x3498db,
+      earth: 0x95a5a6,
+      wind: 0x2ecc71,
+      light: 0xf1c40f,
+      dark: 0x9b59b6
+    };
+    return colors[this.stats.element];
+  }
+}
+
+
+================================================
+FILE: src/scenes/GameScene.ts
+================================================
+import * as Phaser from 'phaser';
+import { MapSystem } from '../systems/MapSystem';
+import { Unit } from '../entities/Unit';
+import { GAME_CONFIG } from '../core/GameConfig';
+import { TurnManager, TurnPhase } from '../core/TurnManager';
+
+enum PlayerInputState {
+  IDLE,
+  UNIT_SELECTED,
+  TARGETING_MOVE,
+  TARGETING_ATTACK,
+  TARGETING_CLAIM,
+}
+
+export class GameScene extends Phaser.Scene {
+  private mapSystem!: MapSystem;
+  private units: Unit[] = [];
+  private playerUnits: Unit[] = [];
+  private enemyUnits: Unit[] = [];
+  private turnManager!: TurnManager;
+  
+  private selectedUnit: Unit | null = null;
+  private unitObjects: Map<string, Phaser.GameObjects.Container> = new Map();
+  
+  private turnText!: Phaser.GameObjects.Text;
+  private actionMenu!: Phaser.GameObjects.Container;
+
+  private playerInputState: PlayerInputState = PlayerInputState.IDLE;
+
+  constructor() {
+    super({ key: 'GameScene' });
+  }
+
+  create(): void {
+    this.mapSystem = new MapSystem(this);
+    this.createInitialUnits();
+    this.turnManager = new TurnManager(this.playerUnits, this.enemyUnits);
+    this.setupInput();
+    this.createUI();
+    this.createActionMenu();
+    this.updateTurnDisplay();
+  }
+
+  private setupInput(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.turnManager.getCurrentPhase() !== TurnPhase.PLAYER_TURN) return;
+      const { x, y } = this.mapSystem.getGridPosition(pointer.x, pointer.y);
+      this.handleTileClick(x, y);
+    });
+  }
+
+  private createInitialUnits(): void {
+    const slime1 = new Unit('slime1', 'slime', { hp: 15, maxHp: 15, attack: 6, defense: 3, moveRange: 4, attackRange: 1, element: 'water' }, 2, 5, true);
+    const slime2 = new Unit('slime2', 'slime', { hp: 12, maxHp: 12, attack: 8, defense: 2, moveRange: 3, attackRange: 1, element: 'fire' }, 3, 6, true);
+    this.addUnit(slime1);
+    this.addUnit(slime2);
+
+    const enemy1 = new Unit('enemy1', 'enemy', { hp: 20, maxHp: 20, attack: 10, defense: 4, moveRange: 3, attackRange: 1, element: 'earth' }, 15, 8, false, 100);
+    const enemy2 = new Unit('enemy2', 'enemy', { hp: 18, maxHp: 18, attack: 9, defense: 3, moveRange: 3, attackRange: 1, element: 'wind' }, 16, 7, false, 20);
+    this.addUnit(enemy1);
+    this.addUnit(enemy2);
+  }
+
+  private addUnit(unit: Unit): void {
+    this.units.push(unit);
+    if (unit.isPlayer) {
+      this.playerUnits.push(unit);
+    } else {
+      this.enemyUnits.push(unit);
+    }
+    this.mapSystem.setTileOccupied(unit.x, unit.y, true);
+    this.createUnitObjects(unit);
+  }
+
+  private createUnitObjects(unit: Unit): void {
+    const { x, y } = this.mapSystem.getScreenPosition(unit.x, unit.y);
+    
+    const sprite = this.add.graphics();
+    const healthText = this.add.text(0, GAME_CONFIG.GRID_SIZE / 2, unit.stats.hp.toString(), {
+      fontSize: '12px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.5)', padding: { x: 2, y: 1 }
+    }).setOrigin(0.5, 0);
+
+    const container = this.add.container(x, y, [sprite, healthText]);
+    this.unitObjects.set(unit.id, container);
+    
+    this.updateUnitSprite(unit);
+  }
+
+  private handleTileClick(x: number, y: number): void {
+    const unitOnTile = this.getUnitAt(x, y);
+
+    switch (this.playerInputState) {
+      case PlayerInputState.IDLE:
+        if (unitOnTile && unitOnTile.isPlayer && !unitOnTile.hasActed) {
+          this.selectUnit(unitOnTile);
+        }
+        break;
+
+      case PlayerInputState.UNIT_SELECTED:
+         if (unitOnTile && unitOnTile === this.selectedUnit) {
+            this.playerInputState = PlayerInputState.TARGETING_MOVE;
+            this.showMovementRange(this.selectedUnit!);
+            this.hideActionMenu();
+         } else if (unitOnTile && unitOnTile.isPlayer && !unitOnTile.hasActed) {
+          this.selectUnit(unitOnTile);
+        } else {
+          this.deselectUnit();
+        }
+        break;
+
+      case PlayerInputState.TARGETING_MOVE:
+        if (this.selectedUnit && this.selectedUnit.canMoveTo(x, y) && !unitOnTile) {
+          this.moveUnit(this.selectedUnit, x, y);
+          this.postMoveUpdate();
+        } else {
+          this.returnToUnitSelectedState();
+        }
+        break;
+
+      case PlayerInputState.TARGETING_ATTACK:
+        if (this.selectedUnit && unitOnTile && this.selectedUnit.canAttack(unitOnTile)) {
+          this.attackUnit(this.selectedUnit, unitOnTile);
+          this.completePlayerAction(this.selectedUnit);
+        } else {
+          this.returnToUnitSelectedState();
+        }
+        break;
+        
+      case PlayerInputState.TARGETING_CLAIM:
+        if (this.selectedUnit && unitOnTile && this.selectedUnit.canClaim(unitOnTile)) {
+          this.claimUnit(this.selectedUnit, unitOnTile);
+        } else {
+          this.returnToUnitSelectedState();
+        }
+        break;
+    }
+  }
+
+  private selectUnit(unit: Unit): void {
+    this.deselectUnit();
+    this.selectedUnit = unit;
+    this.returnToUnitSelectedState();
+  }
+  
+  private returnToUnitSelectedState(): void {
+    if (!this.selectedUnit) return;
+    this.playerInputState = PlayerInputState.UNIT_SELECTED;
+    this.mapSystem.clearAllHighlights();
+    this.mapSystem.highlightTile(this.selectedUnit.x, this.selectedUnit.y, GAME_CONFIG.COLORS.SELECTED);
+    this.showActionMenu(this.selectedUnit);
+  }
+
+  private postMoveUpdate(): void {
+    if (!this.selectedUnit) return;
+    this.selectedUnit.hasMovedThisTurn = true;
+    this.returnToUnitSelectedState();
+  }
+
+  private deselectUnit(): void {
+    this.selectedUnit = null;
+    this.playerInputState = PlayerInputState.IDLE;
+    this.mapSystem.clearAllHighlights();
+    this.hideActionMenu();
+  }
+
+  private showMovementRange(unit: Unit): void {
+    this.mapSystem.clearAllHighlights();
+    this.mapSystem.highlightTile(unit.x, unit.y, GAME_CONFIG.COLORS.SELECTED);
+    
+    for (let y = 0; y < GAME_CONFIG.MAP_HEIGHT; y++) {
+      for (let x = 0; x < GAME_CONFIG.MAP_WIDTH; x++) {
+        if (unit.canMoveTo(x, y) && !this.mapSystem.isTileOccupied(x, y)) {
+          this.mapSystem.highlightTile(x, y, GAME_CONFIG.COLORS.MOVE_RANGE);
+        }
+      }
+    }
+  }
+
+  private showAttackRange(unit: Unit): void {
+    this.mapSystem.clearAllHighlights();
+    this.mapSystem.highlightTile(unit.x, unit.y, GAME_CONFIG.COLORS.SELECTED);
+
+    this.enemyUnits.forEach(enemy => {
+      if (!enemy.isDead() && unit.canAttack(enemy)) {
+        this.mapSystem.highlightTile(enemy.x, enemy.y, GAME_CONFIG.COLORS.ATTACK_RANGE);
+      }
+    });
+  }
+  
+  private showClaimRange(unit: Unit): void {
+    this.mapSystem.clearAllHighlights();
+    this.mapSystem.highlightTile(unit.x, unit.y, GAME_CONFIG.COLORS.SELECTED);
+
+    this.enemyUnits.forEach(enemy => {
+      if (!enemy.isDead() && unit.canClaim(enemy)) {
+        this.mapSystem.highlightTile(enemy.x, enemy.y, GAME_CONFIG.COLORS.CLAIM_RANGE);
+      }
+    });
+  }
+
+  private moveUnit(unit: Unit, x: number, y: number): void {
+    this.mapSystem.setTileOccupied(unit.x, unit.y, false);
+    unit.x = x;
+    unit.y = y;
+    this.mapSystem.setTileOccupied(x, y, true);
+    this.updateUnitPosition(unit);
+  }
+
+  private attackUnit(attacker: Unit, target: Unit): void {
+    const damage = Math.max(1, attacker.stats.attack - target.stats.defense);
+    target.takeDamage(damage);
+    console.log(`${attacker.id} attacks ${target.id} for ${damage} damage!`);
+    
+    if (target.isDead()) {
+      console.log(`${target.id} has been defeated!`);
+      this.removeUnit(target);
+    } else {
+      this.updateUnitSprite(target);
+    }
+  }
+
+  private claimUnit(slime: Unit, target: Unit): void {
+    const success = slime.attemptClaim(target);
+    console.log(`${slime.id} attempts to claim ${target.id} - ${success ? 'SUCCESS' : 'FAILED'}`);
+    
+    if (success) {
+      this.removeUnit(slime);
+      target.isPlayer = true;
+      this.enemyUnits = this.enemyUnits.filter(u => u.id !== target.id);
+      this.playerUnits.push(target);
+      this.updateUnitSprite(target);
+    }
+    
+    this.completePlayerAction(slime);
+  }
+
+  private removeUnit(unit: Unit): void {
+    this.mapSystem.setTileOccupied(unit.x, unit.y, false);
+    
+    this.unitObjects.get(unit.id)?.destroy();
+    this.unitObjects.delete(unit.id);
+    
+    this.units = this.units.filter(u => u.id !== unit.id);
+    if (unit.isPlayer) {
+      this.playerUnits = this.playerUnits.filter(u => u.id !== unit.id);
+    } else {
+      this.enemyUnits = this.enemyUnits.filter(u => u.id !== unit.id);
+    }
+  }
+
+  private updateUnitPosition(unit: Unit): void {
+    const { x, y } = this.mapSystem.getScreenPosition(unit.x, unit.y);
+    this.unitObjects.get(unit.id)?.setPosition(x, y);
+  }
+
+  private updateUnitSprite(unit: Unit): void {
+    const container = this.unitObjects.get(unit.id);
+    if (!container) return;
+
+    const sprite = container.getAt(0) as Phaser.GameObjects.Graphics;
+    const healthText = container.getAt(1) as Phaser.GameObjects.Text;
+
+    sprite.clear();
+    const color = unit.isPlayer ? unit.getColor() : 0x8e44ad;
+    const alpha = unit.hasActed ? 0.5 : 1.0;
+    sprite.fillStyle(color, alpha);
+    sprite.fillCircle(0, 0, GAME_CONFIG.GRID_SIZE / 3);
+    sprite.lineStyle(2, 0xffffff, alpha);
+    sprite.strokeCircle(0, 0, GAME_CONFIG.GRID_SIZE / 3);
+
+    healthText.setText(unit.stats.hp.toString());
+    
+    this.updateUnitPosition(unit);
+  }
+
+  private createUI(): void {
+    this.turnText = this.add.text(10, 10, '', { fontSize: '16px', color: '#ffffff', backgroundColor: '#000000', padding: { x: 10, y: 5 } });
+  }
+
+  private createActionMenu(): void {
+    const menuStyle = { fontSize: '14px', color: '#000000', backgroundColor: '#ecf0f1', padding: { x: 8, y: 4 }, width: 60, align: 'center' };
+    
+    const moveButton = this.add.text(0, 0, 'Move', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+      event.stopPropagation();
+      if (this.selectedUnit) {
+        this.playerInputState = PlayerInputState.TARGETING_MOVE;
+        this.showMovementRange(this.selectedUnit);
+        this.hideActionMenu();
+      }
+    });
+
+    const attackButton = this.add.text(0, 30, 'Attack', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+      event.stopPropagation();
+      if (this.selectedUnit) {
+        this.playerInputState = PlayerInputState.TARGETING_ATTACK;
+        this.showAttackRange(this.selectedUnit);
+        this.hideActionMenu();
+      }
+    });
+
+    const claimButton = this.add.text(0, 60, 'Claim', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+      event.stopPropagation();
+      if (this.selectedUnit && this.selectedUnit.type === 'slime') {
+        this.playerInputState = PlayerInputState.TARGETING_CLAIM;
+        this.showClaimRange(this.selectedUnit);
+        this.hideActionMenu();
+      }
+    });
+
+    const waitButton = this.add.text(0, 90, 'Wait', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+      event.stopPropagation();
+      if (this.selectedUnit) {
+        this.completePlayerAction(this.selectedUnit);
+      }
+    });
+
+    this.actionMenu = this.add.container(0, 0, [moveButton, attackButton, claimButton, waitButton]);
+    this.actionMenu.setDepth(10);
+    this.actionMenu.setVisible(false);
+  }
+
+  private showActionMenu(unit: Unit): void {
+    const { x, y } = this.mapSystem.getScreenPosition(unit.x, unit.y);
+    this.actionMenu.setPosition(x + 20, y - 20);
+    
+    const moveButton = this.actionMenu.getAt(0) as Phaser.GameObjects.Text;
+    moveButton.setInteractive(!unit.hasMovedThisTurn);
+    moveButton.setAlpha(unit.hasMovedThisTurn ? 0.5 : 1.0);
+
+    const claimButton = this.actionMenu.getAt(2) as Phaser.GameObjects.Text;
+    claimButton.setVisible(unit.type === 'slime');
+    
+    this.actionMenu.setVisible(true);
+  }
+
+  private hideActionMenu(): void {
+    this.actionMenu.setVisible(false);
+  }
+
+  private completePlayerAction(unit: Unit): void {
+    unit.hasActed = true;
+    this.updateUnitSprite(unit);
+    this.deselectUnit();
+    this.checkPlayerTurnEnd();
+  }
+
+  private checkPlayerTurnEnd(): void {
+    const allPlayerUnitsActed = this.playerUnits.every(p => p.hasActed || p.isDead());
+    if (allPlayerUnitsActed) {
+      this.time.delayedCall(500, () => this.endPlayerTurn());
+    }
+  }
+
+  private endPlayerTurn(): void {
+    if (this.turnManager.getCurrentPhase() !== TurnPhase.PLAYER_TURN) return;
+    this.deselectUnit();
+    this.turnManager.endPlayerTurn();
+    this.updateTurnDisplay();
+    this.time.delayedCall(500, () => this.processEnemyTurn());
+  }
+
+  private processEnemyTurn(): void {
+    const enemiesCanAct = this.enemyUnits.filter(e => !e.isDead() && !e.hasActed);
+    let i = 0;
+
+    const processNextEnemy = () => {
+      if (i >= enemiesCanAct.length) {
+        this.time.delayedCall(500, () => this.endEnemyTurn());
+        return;
+      }
+
+      const enemy = enemiesCanAct[i];
+      let target = this.findBestTargetFor(enemy);
+
+      if (!target) {
+        this.moveEnemyTowardsPlayer(enemy);
+        target = this.findBestTargetFor(enemy);
+      }
+      
+      if (target) {
+        this.attackUnit(enemy, target);
+      }
+      
+      enemy.hasActed = true;
+      i++;
+      this.time.delayedCall(400, processNextEnemy);
+    };
+    
+    processNextEnemy();
+  }
+  
+  private moveEnemyTowardsPlayer(enemy: Unit): void {
+    const closestPlayer = this.findClosestPlayerFor(enemy);
+    if (!closestPlayer) return;
+
+    let bestMove: {x: number, y: number} | null = null;
+    let minDistance = Math.abs(enemy.x - closestPlayer.x) + Math.abs(enemy.y - closestPlayer.y);
+
+    for (let y = 0; y < GAME_CONFIG.MAP_HEIGHT; y++) {
+      for (let x = 0; x < GAME_CONFIG.MAP_WIDTH; x++) {
+        if (enemy.canMoveTo(x, y) && !this.mapSystem.isTileOccupied(x, y)) {
+          const distance = Math.abs(x - closestPlayer.x) + Math.abs(y - closestPlayer.y);
+          if (distance < minDistance) {
+            minDistance = distance;
+            bestMove = { x, y };
+          }
+        }
+      }
+    }
+
+    if (bestMove) {
+      this.moveUnit(enemy, bestMove.x, bestMove.y);
+    }
+  }
+
+  private findClosestPlayerFor(enemy: Unit): Unit | null {
+    const alivePlayers = this.playerUnits.filter(p => !p.isDead());
+    if (alivePlayers.length === 0) return null;
+
+    return alivePlayers.reduce((closest, player) => {
+      const closestDist = Math.abs(closest.x - enemy.x) + Math.abs(closest.y - enemy.y);
+      const playerDist = Math.abs(player.x - enemy.x) + Math.abs(player.y - enemy.y);
+      return playerDist < closestDist ? player : closest;
+    });
+  }
+
+  private findBestTargetFor(enemy: Unit): Unit | null {
+    const possibleTargets = this.playerUnits.filter(p => !p.isDead() && enemy.canAttack(p));
+    if (possibleTargets.length === 0) return null;
+    
+    return possibleTargets.reduce((best, target) => target.stats.hp < best.stats.hp ? target : best);
+  }
+
+  private endEnemyTurn(): void {
+    this.turnManager.endEnemyTurn();
+    this.updateTurnDisplay();
+    
+    this.units.forEach(u => {
+      if (!u.isDead()) {
+        u.hasActed = false;
+        u.hasMovedThisTurn = false;
+        this.updateUnitSprite(u);
+      }
+    });
+    
+    const gameOver = this.turnManager.checkGameOver();
+    if (gameOver.isOver) {
+      this.showGameOver(gameOver.winner);
+    }
+  }
+
+  private updateTurnDisplay(): void {
+    const phase = this.turnManager.getCurrentPhase();
+    this.turnText.setText(phase === TurnPhase.PLAYER_TURN ? 'Player Turn' : 'Enemy Turn');
+  }
+
+  private showGameOver(winner: 'player' | 'enemy' | null): void {
+    const winText = winner === 'player' ? 'You Win!' : 'Game Over';
+    this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, winText, {
+      fontSize: '48px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.7)'
+    }).setOrigin(0.5).setDepth(20);
+    this.input.enabled = false;
+  }
+
+  private getUnitAt(x: number, y: number): Unit | null {
+    return this.units.find(unit => !unit.isDead() && unit.x === x && unit.y === y) || null;
+  }
+}
+
+
+================================================
+FILE: src/systems/MapSystem.ts
+================================================
+import * as Phaser from 'phaser';
+import { GAME_CONFIG } from '../core/GameConfig';
+
+export interface Tile {
+  x: number;
+  y: number;
+  occupied: boolean;
+  terrain: 'grass' | 'water' | 'mountain' | 'forest';
+  highlight: Phaser.GameObjects.Graphics | null;
+}
+
+export class MapSystem {
+  private tiles: Tile[][] = [];
+  private graphics: Phaser.GameObjects.Graphics;
+
+  constructor(private scene: Phaser.Scene) {
+    this.graphics = scene.add.graphics();
+    this.initializeMap();
+    this.drawGrid();
+  }
+
+  private initializeMap(): void {
+    for (let y = 0; y < GAME_CONFIG.MAP_HEIGHT; y++) {
+      this.tiles[y] = [];
+      for (let x = 0; x < GAME_CONFIG.MAP_WIDTH; x++) {
+        this.tiles[y][x] = {
+          x,
+          y,
+          occupied: false,
+          terrain: 'grass',
+          highlight: null
+        };
+      }
+    }
+  }
+
+  private drawGrid(): void {
+    this.graphics.clear();
+    
+    for (let y = 0; y < GAME_CONFIG.MAP_HEIGHT; y++) {
+      for (let x = 0; x < GAME_CONFIG.MAP_WIDTH; x++) {
+        const pixelX = x * GAME_CONFIG.GRID_SIZE;
+        const pixelY = y * GAME_CONFIG.GRID_SIZE;
+        
+        this.graphics.lineStyle(1, GAME_CONFIG.COLORS.GRID_BORDER, 0.5);
+        this.graphics.strokeRect(pixelX, pixelY, GAME_CONFIG.GRID_SIZE, GAME_CONFIG.GRID_SIZE);
+        
+        const tile = this.tiles[y][x];
+        this.drawTerrain(pixelX, pixelY, tile.terrain);
+      }
+    }
+  }
+
+  private drawTerrain(x: number, y: number, terrain: string): void {
+    const colors = {
+      grass: 0x27ae60,
+      water: 0x2980b9,
+      mountain: 0x7f8c8d,
+      forest: 0x229954
+    };
+
+    this.graphics.fillStyle(colors[terrain as keyof typeof colors], 0.3);
+    this.graphics.fillRect(x + 1, y + 1, GAME_CONFIG.GRID_SIZE - 2, GAME_CONFIG.GRID_SIZE - 2);
+  }
+
+  getTile(x: number, y: number): Tile | null {
+    if (x < 0 || x >= GAME_CONFIG.MAP_WIDTH || y < 0 || y >= GAME_CONFIG.MAP_HEIGHT) {
+      return null;
+    }
+    return this.tiles[y][x];
+  }
+
+  setTileOccupied(x: number, y: number, occupied: boolean): void {
+    const tile = this.getTile(x, y);
+    if (tile) {
+      tile.occupied = occupied;
+    }
+  }
+
+  isTileOccupied(x: number, y: number): boolean {
+    const tile = this.getTile(x, y);
+    return tile ? tile.occupied : true;
+  }
+
+  highlightTile(x: number, y: number, color: number, alpha: number = 0.5): void {
+    const tile = this.getTile(x, y);
+    if (!tile) return;
+
+    this.clearHighlight(x, y);
+
+    const pixelX = x * GAME_CONFIG.GRID_SIZE;
+    const pixelY = y * GAME_CONFIG.GRID_SIZE;
+
+    tile.highlight = this.scene.add.graphics();
+    tile.highlight.fillStyle(color, alpha);
+    tile.highlight.fillRect(pixelX + 2, pixelY + 2, GAME_CONFIG.GRID_SIZE - 4, GAME_CONFIG.GRID_SIZE - 4);
+  }
+
+  clearHighlight(x: number, y: number): void {
+    const tile = this.getTile(x, y);
+    if (tile?.highlight) {
+      tile.highlight.destroy();
+      tile.highlight = null;
+    }
+  }
+
+  clearAllHighlights(): void {
+    for (let y = 0; y < GAME_CONFIG.MAP_HEIGHT; y++) {
+      for (let x = 0; x < GAME_CONFIG.MAP_WIDTH; x++) {
+        this.clearHighlight(x, y);
+      }
+    }
+  }
+
+  getGridPosition(screenX: number, screenY: number): { x: number; y: number } {
+    return {
+      x: Math.floor(screenX / GAME_CONFIG.GRID_SIZE),
+      y: Math.floor(screenY / GAME_CONFIG.GRID_SIZE)
+    };
+  }
+
+  getScreenPosition(gridX: number, gridY: number): { x: number; y: number } {
+    return {
+      x: gridX * GAME_CONFIG.GRID_SIZE + GAME_CONFIG.GRID_SIZE / 2,
+      y: gridY * GAME_CONFIG.GRID_SIZE + GAME_CONFIG.GRID_SIZE / 2
+    };
+  }
+}
+
