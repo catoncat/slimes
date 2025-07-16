@@ -7,6 +7,7 @@ export interface Tile {
   occupied: boolean;
   terrain: 'grass' | 'water' | 'mountain' | 'forest';
   highlight: Phaser.GameObjects.Graphics | null;
+  elevation: number;
 }
 
 export class MapSystem {
@@ -28,7 +29,8 @@ export class MapSystem {
           y,
           occupied: false,
           terrain: 'grass',
-          highlight: null
+          highlight: null,
+          elevation: 1
         };
       }
     }

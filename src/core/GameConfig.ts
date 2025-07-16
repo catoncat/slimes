@@ -14,12 +14,10 @@ export const GAME_CONFIG = {
 } as const;
 
 export const ELEMENTS = {
-  FIRE: 'fire',
   WATER: 'water',
-  EARTH: 'earth',
-  WIND: 'wind',
-  LIGHT: 'light',
-  DARK: 'dark'
+  FIRE: 'fire',
+  GRASS: 'grass',
+  SUN: 'sun' // 特殊元素
 } as const;
 
 export type Element = typeof ELEMENTS[keyof typeof ELEMENTS];

@@ -3,6 +3,9 @@ import { MapSystem } from '../systems/MapSystem';
 import { Unit } from '../entities/Unit';
 import { GAME_CONFIG } from '../core/GameConfig';
 import { TurnManager, TurnPhase } from '../core/TurnManager';
+import { getElementalAdvantage } from '../utils/combat';
+import { slimeData } from '../data/slimes';
+import { enemyData } from '../data/enemies';
 
 enum PlayerInputState {
   IDLE,
@@ -10,6 +13,7 @@ enum PlayerInputState {
   TARGETING_MOVE,
   TARGETING_ATTACK,
   TARGETING_CLAIM,
+  TARGETING_ABILITY,
 }
 
 export class GameScene extends Phaser.Scene {
@@ -42,23 +46,55 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupInput(): void {
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, gameObjects: Phaser.GameObjects.GameObject[]) => {
       if (this.turnManager.getCurrentPhase() !== TurnPhase.PLAYER_TURN) return;
+
+      // If the list of clicked game objects is not empty, it means we clicked a UI element.
+      // In this case, we let the UI element's own handler deal with it and do nothing in the global handler.
+      if (gameObjects.length > 0) {
+        return;
+      }
+
       const { x, y } = this.mapSystem.getGridPosition(pointer.x, pointer.y);
       this.handleTileClick(x, y);
     });
   }
 
   private createInitialUnits(): void {
-    const slime1 = new Unit('slime1', 'slime', { hp: 15, maxHp: 15, attack: 6, defense: 3, moveRange: 4, attackRange: 1, element: 'water' }, 2, 5, true);
-    const slime2 = new Unit('slime2', 'slime', { hp: 12, maxHp: 12, attack: 8, defense: 2, moveRange: 3, attackRange: 1, element: 'fire' }, 3, 6, true);
-    this.addUnit(slime1);
-    this.addUnit(slime2);
+    this.createUnitFromData('little', 2, 5, true);
+    this.createUnitFromData('sticky', 3, 6, true);
 
-    const enemy1 = new Unit('enemy1', 'enemy', { hp: 20, maxHp: 20, attack: 10, defense: 4, moveRange: 3, attackRange: 1, element: 'earth' }, 15, 8, false, 100);
-    const enemy2 = new Unit('enemy2', 'enemy', { hp: 18, maxHp: 18, attack: 9, defense: 3, moveRange: 3, attackRange: 1, element: 'wind' }, 16, 7, false, 20);
-    this.addUnit(enemy1);
-    this.addUnit(enemy2);
+    this.createUnitFromData('swordsman', 15, 8, false);
+    this.createUnitFromData('archer', 16, 7, false);
+  }
+
+  private createUnitFromData(dataKey: string, x: number, y: number, isPlayer: boolean): void {
+    const unitDataStore = isPlayer ? slimeData : enemyData;
+    const data = unitDataStore[dataKey];
+    if (!data) {
+      console.error(`No data found for key: ${dataKey}`);
+      return;
+    }
+
+    const unitId = `${data.name.toLowerCase().replace(' ', '')}${this.units.length + 1}`;
+    
+    const stats = {
+      ...data.stats,
+      name: data.name,
+      maxHp: data.stats.hp,
+    };
+
+    const unit = new Unit(
+      unitId,
+      data.type,
+      stats,
+      x,
+      y,
+      isPlayer,
+      data.claimRate
+    );
+
+    this.addUnit(unit);
   }
 
   private addUnit(unit: Unit): void {
@@ -97,15 +133,17 @@ export class GameScene extends Phaser.Scene {
         break;
 
       case PlayerInputState.UNIT_SELECTED:
-         if (unitOnTile && unitOnTile === this.selectedUnit) {
-            this.playerInputState = PlayerInputState.TARGETING_MOVE;
-            this.showMovementRange(this.selectedUnit!);
-            this.hideActionMenu();
-         } else if (unitOnTile && unitOnTile.isPlayer && !unitOnTile.hasActed) {
-          this.selectUnit(unitOnTile);
-        } else {
-          this.deselectUnit();
+        // If we clicked the selected unit again, do nothing. Let the menu handle it.
+        if (unitOnTile === this.selectedUnit) {
+          return;
         }
+        // If we clicked another one of our units, select that one instead.
+        if (unitOnTile && unitOnTile.isPlayer && !unitOnTile.hasActed) {
+          this.selectUnit(unitOnTile);
+          return;
+        }
+        // Otherwise, deselect the unit. This handles clicking on empty space or enemies.
+        this.deselectUnit();
         break;
 
       case PlayerInputState.TARGETING_MOVE:
@@ -129,6 +167,18 @@ export class GameScene extends Phaser.Scene {
       case PlayerInputState.TARGETING_CLAIM:
         if (this.selectedUnit && unitOnTile && this.selectedUnit.canClaim(unitOnTile)) {
           this.claimUnit(this.selectedUnit, unitOnTile);
+        } else {
+          this.returnToUnitSelectedState();
+        }
+        break;
+
+      case PlayerInputState.TARGETING_ABILITY:
+        if (this.selectedUnit && unitOnTile && this.selectedUnit.canUseAbility(unitOnTile)) {
+          if (this.selectedUnit.useAbility(unitOnTile)) {
+            this.completePlayerAction(this.selectedUnit);
+          } else {
+            this.returnToUnitSelectedState();
+          }
         } else {
           this.returnToUnitSelectedState();
         }
@@ -198,6 +248,17 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private showAbilityRange(unit: Unit): void {
+    this.mapSystem.clearAllHighlights();
+    this.mapSystem.highlightTile(unit.x, unit.y, GAME_CONFIG.COLORS.SELECTED);
+
+    this.enemyUnits.forEach(enemy => {
+      if (!enemy.isDead() && unit.canUseAbility(enemy)) {
+        this.mapSystem.highlightTile(enemy.x, enemy.y, GAME_CONFIG.COLORS.CLAIM_RANGE); // Use claim color for now
+      }
+    });
+  }
+
   private moveUnit(unit: Unit, x: number, y: number): void {
     this.mapSystem.setTileOccupied(unit.x, unit.y, false);
     unit.x = x;
@@ -207,9 +268,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private attackUnit(attacker: Unit, target: Unit): void {
-    const damage = Math.max(1, attacker.stats.attack - target.stats.defense);
-    target.takeDamage(damage);
-    console.log(`${attacker.id} attacks ${target.id} for ${damage} damage!`);
+    const baseDamage = attacker.stats.attack;
+
+    // 1. Elemental advantage
+    const elementalMultiplier = getElementalAdvantage(attacker.stats.element, target.stats.element);
+
+    // 2. Elevation advantage
+    const attackerTile = this.mapSystem.getTile(attacker.x, attacker.y);
+    const targetTile = this.mapSystem.getTile(target.x, target.y);
+    let elevationMultiplier = 1.0;
+    if (attackerTile && targetTile) {
+      const elevationDiff = attackerTile.elevation - targetTile.elevation;
+      if (elevationDiff > 0) {
+        elevationMultiplier = 1.1; // Higher ground bonus
+      } else if (elevationDiff < 0) {
+        elevationMultiplier = 0.9; // Lower ground penalty
+      }
+    }
+
+    // Calculate final damage
+    const totalDamage = baseDamage * elementalMultiplier * elevationMultiplier;
+    const damageDealt = target.takeDamage(totalDamage);
+
+    console.log(`${attacker.id} attacks ${target.id}. Base: ${baseDamage}, Elemental: x${elementalMultiplier}, Elevation: x${elevationMultiplier}. Final Damage: ${damageDealt}`);
     
     if (target.isDead()) {
       console.log(`${target.id} has been defeated!`);
@@ -224,6 +305,13 @@ export class GameScene extends Phaser.Scene {
     console.log(`${slime.id} attempts to claim ${target.id} - ${success ? 'SUCCESS' : 'FAILED'}`);
     
     if (success) {
+      // Check for elemental affinity bonus
+      if (slime.stats.element === target.stats.element) {
+        console.log(`Elemental affinity bonus! ${target.id} gets +25% ATK and DEF.`);
+        target.stats.attack = Math.round(target.stats.attack * 1.25);
+        target.stats.defense = Math.round(target.stats.defense * 1.25);
+      }
+
       this.removeUnit(slime);
       target.isPlayer = true;
       this.enemyUnits = this.enemyUnits.filter(u => u.id !== target.id);
@@ -280,7 +368,7 @@ export class GameScene extends Phaser.Scene {
   private createActionMenu(): void {
     const menuStyle = { fontSize: '14px', color: '#000000', backgroundColor: '#ecf0f1', padding: { x: 8, y: 4 }, width: 60, align: 'center' };
     
-    const moveButton = this.add.text(0, 0, 'Move', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+    const moveButton = this.add.text(0, 0, 'Move', menuStyle).setInteractive().on('pointerdown', (pointer: Phaser.Input.Pointer, localX: number, localY: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       if (this.selectedUnit) {
         this.playerInputState = PlayerInputState.TARGETING_MOVE;
@@ -289,7 +377,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    const attackButton = this.add.text(0, 30, 'Attack', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+    const attackButton = this.add.text(0, 30, 'Attack', menuStyle).setInteractive().on('pointerdown', (pointer: Phaser.Input.Pointer, localX: number, localY: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       if (this.selectedUnit) {
         this.playerInputState = PlayerInputState.TARGETING_ATTACK;
@@ -298,7 +386,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    const claimButton = this.add.text(0, 60, 'Claim', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+    const claimButton = this.add.text(0, 60, 'Claim', menuStyle).setInteractive().on('pointerdown', (pointer: Phaser.Input.Pointer, localX: number, localY: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       if (this.selectedUnit && this.selectedUnit.type === 'slime') {
         this.playerInputState = PlayerInputState.TARGETING_CLAIM;
@@ -307,14 +395,23 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    const waitButton = this.add.text(0, 90, 'Wait', menuStyle).setInteractive().on('pointerdown', (event: Phaser.Input.Pointer) => {
+    const abilityButton = this.add.text(0, 90, 'Ability', menuStyle).setInteractive().on('pointerdown', (pointer: Phaser.Input.Pointer, localX: number, localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      if (this.selectedUnit && this.selectedUnit.type === 'slime') {
+        this.playerInputState = PlayerInputState.TARGETING_ABILITY;
+        this.showAbilityRange(this.selectedUnit);
+        this.hideActionMenu();
+      }
+    });
+
+    const waitButton = this.add.text(0, 120, 'Wait', menuStyle).setInteractive().on('pointerdown', (pointer: Phaser.Input.Pointer, localX: number, localY: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       if (this.selectedUnit) {
         this.completePlayerAction(this.selectedUnit);
       }
     });
 
-    this.actionMenu = this.add.container(0, 0, [moveButton, attackButton, claimButton, waitButton]);
+    this.actionMenu = this.add.container(0, 0, [moveButton, attackButton, claimButton, abilityButton, waitButton]);
     this.actionMenu.setDepth(10);
     this.actionMenu.setVisible(false);
   }
@@ -329,6 +426,9 @@ export class GameScene extends Phaser.Scene {
 
     const claimButton = this.actionMenu.getAt(2) as Phaser.GameObjects.Text;
     claimButton.setVisible(unit.type === 'slime');
+
+    const abilityButton = this.actionMenu.getAt(3) as Phaser.GameObjects.Text;
+    abilityButton.setVisible(unit.type === 'slime');
     
     this.actionMenu.setVisible(true);
   }
@@ -427,8 +527,29 @@ export class GameScene extends Phaser.Scene {
   private findBestTargetFor(enemy: Unit): Unit | null {
     const possibleTargets = this.playerUnits.filter(p => !p.isDead() && enemy.canAttack(p));
     if (possibleTargets.length === 0) return null;
-    
-    return possibleTargets.reduce((best, target) => target.stats.hp < best.stats.hp ? target : best);
+
+    // Grade each target based on different criteria
+    const gradedTargets = possibleTargets.map(target => {
+      let score = 100;
+
+      // Priority 1: Elevation. Lower elevation is much better.
+      const enemyTile = this.mapSystem.getTile(enemy.x, enemy.y);
+      const targetTile = this.mapSystem.getTile(target.x, target.y);
+      if (enemyTile && targetTile) {
+        const elevationDiff = enemyTile.elevation - targetTile.elevation;
+        score += elevationDiff * 20; // Give a heavy bonus for height advantage
+      }
+
+      // Priority 2: Lowest HP.
+      score -= target.stats.hp;
+
+      return { unit: target, score };
+    });
+
+    // Sort by score descending
+    gradedTargets.sort((a, b) => b.score - a.score);
+
+    return gradedTargets[0].unit;
   }
 
   private endEnemyTurn(): void {

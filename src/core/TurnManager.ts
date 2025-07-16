@@ -1,3 +1,5 @@
+import { Unit } from '../entities/Unit';
+
 export enum TurnPhase {
   PLAYER_TURN = 'player_turn',
   ENEMY_TURN = 'enemy_turn',
@@ -25,7 +27,6 @@ export class TurnManager {
   }
 
   startNewRound(): void {
-    this.turnCount++;
     this.currentPhase = TurnPhase.PLAYER_TURN;
     
     // Reset all units' action state
@@ -50,8 +51,13 @@ export class TurnManager {
   }
 
   endEnemyTurn(): void {
+    // Update status effects for all living units at the end of the round
+    this.playerUnits.forEach(u => !u.isDead() && u.updateStatusEffects());
+    this.enemyUnits.forEach(u => !u.isDead() && u.updateStatusEffects());
+
     this.currentPhase = TurnPhase.PLAYER_TURN;
     console.log("Player turn starts.");
+    this.turnCount++;
     this.startNewRound();
   }
 
@@ -93,14 +99,4 @@ export class TurnManager {
       enemy: this.enemyUnits.filter(u => !u.isDead())
     };
   }
-}
-
-export interface Unit {
-  id: string;
-  x: number;
-  y: number;
-  isPlayer: boolean;
-  isDead(): boolean;
-  canMoveTo(x: number, y: number): boolean;
-  canAttack(target: Unit): boolean;
 }
