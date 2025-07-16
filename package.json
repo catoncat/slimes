@@ -1,0 +1,22 @@
+{
+  "name": "slimes",
+  "version": "1.0.0",
+  "description": "史莱姆的野望 - JavaScript复现版",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["game", "phaser", "typescript", "slime"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^24.0.14",
+    "phaser": "^3.90.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4"
+  }
+}
